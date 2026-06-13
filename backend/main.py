@@ -406,6 +406,17 @@ def run_pipeline(system_prompt: str, tools: list) -> dict:
 
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
+@app.get("/")
+def index():
+    return jsonify(
+        {
+            "service": "redteamiq-backend",
+            "message": "RedTeamIQ is running. Use the endpoints below.",
+            "endpoints": {"GET /health": "liveness + config", "POST /scan": "run a red-team scan"},
+        }
+    )
+
+
 @app.get("/health")
 def health():
     return jsonify(
