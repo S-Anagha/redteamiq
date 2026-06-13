@@ -16,3 +16,7 @@ dist/
 
 # ─── OS / editor cruft ───────────────────────────────────────────────────
 .DS_Store
+
+# ─── Project context (kept local) ────────────────────────────────────────
+Claude.md
+CLAUDE.md
