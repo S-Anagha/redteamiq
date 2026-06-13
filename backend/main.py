@@ -197,15 +197,28 @@ def _invoke(openai_client, agent_name: str, user_input: str) -> str:
 
 
 def extract_json(text: str, default):
-    """Best-effort parse of JSON that may be wrapped in prose or ``` fences."""
+    """Best-effort parse of JSON that may be wrapped in prose or ``` fences.
+
+    Models occasionally emit a single malformed element (e.g. a value wrapped in
+    \\" instead of "), which would otherwise fail the whole array. So when a clean
+    parse fails we salvage individual objects, repairing the common delimiter case.
+    """
     if not text:
         return default
-    fenced = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
-    candidate = fenced.group(1) if fenced else text
+    candidate = text.strip()
+    # Strip only an OUTER ```json ... ``` wrapper. Do NOT use a search that could
+    # match a code fence inside an attack payload (that corrupts the candidate).
+    if candidate.startswith("```"):
+        candidate = re.sub(r"^```(?:json)?[ \t]*\n?", "", candidate)
+        candidate = re.sub(r"\n?```\s*$", "", candidate).strip()
+
+    # 1) Clean parse of the whole thing.
     try:
         return json.loads(candidate)
     except Exception:
         pass
+
+    # 2) Clean parse of the first balanced array/object slice.
     for opener, closer in (("[", "]"), ("{", "}")):
         start = candidate.find(opener)
         end = candidate.rfind(closer)
@@ -214,6 +227,21 @@ def extract_json(text: str, default):
                 return json.loads(candidate[start : end + 1])
             except Exception:
                 continue
+
+    # 3) Salvage: pull out individual {...} objects and parse each on its own.
+    #    Skip any that still won't parse, so one bad element doesn't sink the rest.
+    if isinstance(default, list):
+        salvaged = []
+        for obj in re.findall(r"\{[^{}]*\}", candidate, re.DOTALL):
+            for attempt in (obj, obj.replace('\\"', '"')):
+                try:
+                    salvaged.append(json.loads(attempt))
+                    break
+                except Exception:
+                    continue
+        if salvaged:
+            return salvaged
+
     return default
 
 
