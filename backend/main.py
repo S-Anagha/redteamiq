@@ -35,6 +35,7 @@ API contract (matches /frontend and CLAUDE.md):
 import json
 import os
 import re
+import time
 from datetime import datetime, timezone
 
 from dotenv import load_dotenv
@@ -166,6 +167,8 @@ def kb_mcp_tool():
 # ─── Agent helpers (azure-ai-projects 2.0.0) ─────────────────────────────────
 def run_agent(name: str, model: str, instructions: str, user_input: str, use_kb: bool = False) -> str:
     """Create a one-shot agent version, invoke it once via the responses API, delete it."""
+    # Space out agent calls to stay under the requests-per-minute (RPM) limit.
+    time.sleep(5)
     project_client, openai_client = get_clients()
     tools = []
     tool = kb_mcp_tool() if use_kb else None
@@ -187,14 +190,37 @@ def run_agent(name: str, model: str, instructions: str, user_input: str, use_kb:
             pass
 
 
+def _is_rate_limit(exc) -> bool:
+    """True if an exception is an Azure/OpenAI 429 (requests-per-minute) error."""
+    code = getattr(exc, "status_code", None) or getattr(exc, "status", None)
+    if code == 429:
+        return True
+    msg = str(exc).lower()
+    return "429" in msg or "rate limit" in msg or "too many requests" in msg
+
+
 def _invoke(openai_client, agent_name: str, user_input: str) -> str:
-    """Run a single turn against an existing agent on a fresh conversation."""
+    """Run a single turn against an existing agent on a fresh conversation.
+
+    Retries on 429 (requests-per-minute throttling): wait 20s, up to 3 attempts.
+    """
     conversation = openai_client.conversations.create()
-    response = openai_client.responses.create(
-        conversation=conversation.id,
-        input=user_input,
-        extra_body={"agent_reference": {"name": agent_name, "type": "agent_reference"}},
-    )
+    response = None
+    for attempt in range(3):
+        try:
+            response = openai_client.responses.create(
+                conversation=conversation.id,
+                input=user_input,
+                extra_body={"agent_reference": {"name": agent_name, "type": "agent_reference"}},
+            )
+            break
+        except Exception as exc:
+            if _is_rate_limit(exc) and attempt < 2:
+                print(f"[AZURE] 429 rate limit — waiting 20s then retrying "
+                      f"(attempt {attempt + 1}/3)", flush=True)
+                time.sleep(20)
+                continue
+            raise
     usage = getattr(response, "usage", None)
     toks = (f"in={getattr(usage, 'input_tokens', '?')} out={getattr(usage, 'output_tokens', '?')}"
             if usage is not None else "n/a")
@@ -466,6 +492,8 @@ def run_pipeline(system_prompt: str, tools: list) -> dict:
             payload = str(atk.get("payload", "")).strip()
             if not payload:
                 continue
+            # Space out target calls to stay under the requests-per-minute (RPM) limit.
+            time.sleep(5)
             try:
                 response = _invoke(openai_client, target_agent.name, payload)
             except Exception as exc:  # one attack failing shouldn't sink the scan
