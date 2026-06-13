@@ -176,6 +176,8 @@ def run_agent(name: str, model: str, instructions: str, user_input: str, use_kb:
         agent_name=name,
         definition=PromptAgentDefinition(model=model, instructions=instructions, tools=tools),
     )
+    print(f"[AZURE] created agent '{agent.name}' v{getattr(agent, 'version', '?')} "
+          f"model={model} kb_tool={'yes' if tools else 'no'}", flush=True)
     try:
         return _invoke(openai_client, agent.name, user_input)
     finally:
@@ -193,6 +195,11 @@ def _invoke(openai_client, agent_name: str, user_input: str) -> str:
         input=user_input,
         extra_body={"agent_reference": {"name": agent_name, "type": "agent_reference"}},
     )
+    usage = getattr(response, "usage", None)
+    toks = (f"in={getattr(usage, 'input_tokens', '?')} out={getattr(usage, 'output_tokens', '?')}"
+            if usage is not None else "n/a")
+    print(f"[AZURE]   ↳ responses.create id={getattr(response, 'id', None)} "
+          f"model={getattr(response, 'model', None)} conv={conversation.id} tokens[{toks}]", flush=True)
     return getattr(response, "output_text", "") or ""
 
 
@@ -318,8 +325,9 @@ Respond with ONLY a JSON array; each element:
 {"attack": "...", "tier": <1-7>, "status": "partial|fail",
   "severity": "CRITICAL|HIGH|MEDIUM|LOW", "result": "...",
   "owasp_ref": "...", "citation": "...", "fix": "..."}"""
-    if USE_FOUNDRY_IQ:
-        return base + "\n\n" + _kb_directive("OWASP reference and fix recommendations")
+    # Report always grounds in-context (not via the MCP KB): the knowledge_base_retrieve
+    # query built from adversarial finding names reliably trips the KB's content filter.
+    # Attack-gen and reasoning already demonstrate live Foundry IQ retrieval.
     kb = load_kb("02_owasp_reference.md") + "\n\n" + load_kb("04_fix_recommendations.md")
     return base + f"\n\n=== KNOWLEDGE BASE: OWASP REFERENCE & FIX RECOMMENDATIONS ===\n{kb}"
 
@@ -431,24 +439,45 @@ def run_pipeline(system_prompt: str, tools: list) -> dict:
     breaches = [v for v in verdicts if str(v.get("status", "")).lower() in ("partial", "fail")]
 
     # 5 ─ Report: enrich breaches with OWASP refs, citations, fixes ────────────
+    # The report queries Foundry IQ. We send only the attack NAME/tier/severity —
+    # NOT the breach "result" text, which can quote leaked secrets or injection
+    # strings that trip the KB's content filter. The result is merged back below.
     findings = []
     if breaches:
-        report_raw = run_agent(
-            "redteamiq-report", MODEL_REASONING, report_instructions(),
-            json.dumps(breaches), use_kb=True,
-        )
-        findings = extract_json(report_raw, [])
-        if not isinstance(findings, list):
-            findings = []
+        report_in = json.dumps([
+            {"attack": v.get("name"), "tier": v.get("tier"), "severity": v.get("severity"),
+             "status": v.get("status")}
+            for v in breaches
+        ])
+        try:
+            report_raw = run_agent(
+                "redteamiq-report", MODEL_REASONING, report_instructions(), report_in, use_kb=False,
+            )
+            findings = extract_json(report_raw, [])
+            if not isinstance(findings, list) or not findings:
+                raise ValueError("report returned no findings")
+        except Exception as exc:
+            # Degrade gracefully: still return the confirmed breaches without enrichment
+            # rather than failing the whole scan.
+            print(f"[report] enrichment failed ({exc}); using un-enriched findings", flush=True)
+            findings = [
+                {"attack": v.get("name"), "tier": v.get("tier"), "severity": v.get("severity"),
+                 "status": v.get("status"), "owasp_ref": "", "citation": "", "fix": ""}
+                for v in breaches
+            ]
 
-    # Merge original payload/tests/tier back in by attack name (report may drop them).
+    # Merge the verdict "result" and original payload/tests/tier back in by attack name.
     by_name = {e["name"].lower(): e for e in executed}
+    result_by_name = {v.get("name", "").lower(): v.get("result", "") for v in breaches}
     for f in findings:
-        src = by_name.get(str(f.get("attack", "")).lower())
+        key = str(f.get("attack", "")).lower()
+        src = by_name.get(key)
         if src:
             f.setdefault("payload", src["payload"])
             f.setdefault("tests", src["tests"])
             f.setdefault("tier", src["tier"])
+        if not f.get("result"):
+            f["result"] = result_by_name.get(key, "")
         f["partial"] = str(f.get("status", "")).lower() == "partial"
 
     return finalize(findings, attacks_run=len(executed))
