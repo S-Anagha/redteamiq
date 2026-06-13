@@ -43,14 +43,14 @@ from flask_cors import CORS
 
 from azure.ai.projects import AIProjectClient
 from azure.ai.projects.models import PromptAgentDefinition, MCPTool
-from azure.identity import DefaultAzureCredential
+from azure.identity import AzureCliCredential, DefaultAzureCredential
 
 load_dotenv()
 
 # ─── Configuration ──────────────────────────────────────────────────────────
 PROJECT_ENDPOINT = os.environ.get("PROJECT_ENDPOINT", "")
 MODEL_EXECUTION = os.environ.get("MODEL_EXECUTION", "gpt-4.1-mini")
-MODEL_REASONING = os.environ.get("MODEL_REASONING", "gpt-4.1-mini 2")
+MODEL_REASONING = os.environ.get("MODEL_REASONING", "gpt-4.1-mini-2")
 PORT = int(os.environ.get("PORT", "5001"))
 
 # Foundry IQ knowledge base (Azure AI Search agentic retrieval over MCP).
@@ -97,6 +97,22 @@ _project_client = None
 _openai_client = None
 
 
+def _build_credential():
+    """Pick an Azure credential.
+
+    Default to AzureCliCredential (your `az login`) because it ignores the
+    AZURE_CLIENT_ID / AZURE_TENANT_ID / AZURE_CLIENT_SECRET environment variables.
+    A stray/invalid AZURE_CLIENT_ID in the environment is what produces the
+    "client_id should be the id of a Microsoft Entra application" error — this
+    avoids it entirely. Set AZURE_AUTH=default to use the full DefaultAzureCredential
+    chain instead (e.g. managed identity when hosted in Azure).
+    """
+    mode = os.environ.get("AZURE_AUTH", "cli").strip().lower()
+    if mode == "default":
+        return DefaultAzureCredential()
+    return AzureCliCredential()
+
+
 def get_clients():
     """Return (AIProjectClient, OpenAI-compatible client), creating them on first use."""
     global _project_client, _openai_client
@@ -105,7 +121,7 @@ def get_clients():
             raise RuntimeError("PROJECT_ENDPOINT is not set — see .env.example")
         _project_client = AIProjectClient(
             endpoint=PROJECT_ENDPOINT,
-            credential=DefaultAzureCredential(),
+            credential=_build_credential(),
         )
         _openai_client = _project_client.get_openai_client()
     return _project_client, _openai_client
