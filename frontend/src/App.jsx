@@ -5,7 +5,7 @@ import AttackFeedScreen from './components/AttackFeedScreen.jsx'
 import ReportScreen from './components/ReportScreen.jsx'
 import { runAnalysis } from './api/client.js'
 
-const STEPS = ['Configure', 'Attack', 'Report']
+const STEPS = ['Configure', 'Battle', 'Report']
 
 export default function App() {
   const [screen, setScreen] = useState('input') // input | feed | report
@@ -13,49 +13,21 @@ export default function App() {
   const [endpoint, setEndpoint] = useState('')
 
   const [input, setInput] = useState(null)
-  const [rows, setRows] = useState([])
-  const [total, setTotal] = useState(null)
+  const [rounds, setRounds] = useState(null) // null = still loading (live API in flight)
   const [report, setReport] = useState(null)
   const [error, setError] = useState(null)
-
-  const doneCount = rows.filter((r) => r.status !== 'running' && r.status !== 'queued').length
-  const failCount = rows.filter((r) => r.status === 'fail').length
-  const partialCount = rows.filter((r) => r.status === 'partial').length
-  const passCount = rows.filter((r) => r.status === 'pass').length
 
   const handleRun = useCallback(
     async (cfg) => {
       setInput(cfg)
-      setRows([])
+      setRounds(null)
       setReport(null)
       setError(null)
-      setTotal(null)
       setScreen('feed')
-
-      const onEvent = (ev) => {
-        if (ev.type === 'start') setTotal(ev.total)
-        if (ev.type === 'attack-start') {
-          setRows((prev) => [...prev, { index: ev.index, attack: ev.attack, status: 'running' }])
-        }
-        if (ev.type === 'attack-result') {
-          setRows((prev) => {
-            const next = [...prev]
-            const i = next.findIndex((r) => (r.attack.id ?? r.index) === (ev.attack.id ?? ev.index))
-            const row = { index: ev.index, attack: ev.attack, status: ev.status, finding: ev.finding }
-            if (i >= 0) next[i] = row
-            else next.push(row)
-            return next
-          })
-        }
-        if (ev.type === 'done') {
-          setReport(ev.report)
-          // Brief pause so the final row's result is visible before flipping screens.
-          setTimeout(() => setScreen('report'), 700)
-        }
-      }
-
       try {
-        await runAnalysis(cfg, { mode, endpoint, onEvent })
+        const { rounds: r, report: rep } = await runAnalysis(cfg, { mode, endpoint })
+        setReport(rep)
+        setRounds(r)
       } catch (e) {
         setError(e.message || 'Run failed')
       }
@@ -65,7 +37,7 @@ export default function App() {
 
   const reset = () => {
     setScreen('input')
-    setRows([])
+    setRounds(null)
     setReport(null)
     setError(null)
   }
@@ -75,7 +47,7 @@ export default function App() {
   return (
     <div className="relative z-10 min-h-full">
       <header className="sticky top-0 z-20 border-b border-[#1f2937] bg-[#0a0e14]/85 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-3.5">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3.5">
           <Logo />
           <nav className="hidden items-center gap-1.5 font-mono text-xs sm:flex">
             {STEPS.map((s, i) => (
@@ -118,19 +90,17 @@ export default function App() {
       )}
       {screen === 'feed' && (
         <AttackFeedScreen
-          rows={rows}
-          total={total}
-          doneCount={doneCount}
-          failCount={failCount}
-          partialCount={partialCount}
-          passCount={passCount}
+          rounds={rounds}
+          report={report}
+          mode={mode}
+          onComplete={() => setScreen('report')}
         />
       )}
       {screen === 'report' && report && (
         <ReportScreen report={report} input={input} onReset={reset} />
       )}
 
-      <footer className="mx-auto max-w-5xl px-6 py-8 text-center font-mono text-xs text-gray-600">
+      <footer className="mx-auto max-w-6xl px-6 py-8 text-center font-mono text-xs text-gray-600">
         RedTeamIQ · Microsoft Agents League 2026 · Reasoning Agents track
       </footer>
     </div>

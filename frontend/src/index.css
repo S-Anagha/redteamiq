@@ -57,6 +57,51 @@ body::before {
 }
 .slide-in { animation: slide-in 0.25s ease-out both; }
 
+/* Attack beam — a thin line that shoots left→right with a flash on impact */
+@keyframes beam-shoot {
+  0% { width: 0; opacity: 0; transform: translateX(-120px); }
+  25% { opacity: 1; }
+  60% { width: 240px; opacity: 1; transform: translateX(0); }
+  100% { width: 240px; opacity: 0; transform: translateX(120px); }
+}
+.attack-beam {
+  height: 2px;
+  width: 240px;
+  background: linear-gradient(90deg, rgba(239,68,68,0), #ef4444 40%, #22d3ee 100%);
+  box-shadow: 0 0 12px #ef4444, 0 0 24px rgba(34,211,238,0.6);
+  border-radius: 2px;
+  animation: beam-shoot 1.5s ease-in both;
+}
+
+/* Score drop pulse */
+@keyframes score-pulse {
+  0% { transform: scale(1); filter: brightness(1); }
+  30% { transform: scale(1.18); filter: brightness(1.6); }
+  100% { transform: scale(1); filter: brightness(1); }
+}
+.score-pulse { animation: score-pulse 0.6s ease-out; display: inline-block; }
+
+/* Faint moving scanline overlay for the ops-console feel */
+@keyframes scan {
+  0% { background-position: 0 0; }
+  100% { background-position: 0 100%; }
+}
+.scanlines { position: relative; }
+.scanlines::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(255, 255, 255, 0.018) 0px,
+    rgba(255, 255, 255, 0.018) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  z-index: 1;
+}
+
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: #0a0e14; }
 ::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 6px; }

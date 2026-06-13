@@ -549,7 +549,32 @@ def run_pipeline(system_prompt: str, tools: list) -> dict:
             f["result"] = result_by_name.get(key, "")
         f["partial"] = str(f.get("status", "")).lower() == "partial"
 
-    return finalize(findings, attacks_run=len(executed))
+    report = finalize(findings, attacks_run=len(executed))
+
+    # Per-round playback data for the live attack feed (Screen 2): every executed
+    # attack with the target's actual response + the reasoning verdict. Additive —
+    # does not change the existing score/findings contract.
+    verdict_by_name = {v.get("name", "").lower(): v for v in verdicts}
+    finding_by_name = {str(f.get("attack", "")).lower(): f for f in findings}
+    rounds = []
+    for e in executed:
+        key = e["name"].lower()
+        v = verdict_by_name.get(key, {})
+        f = finding_by_name.get(key, {})
+        status = str(v.get("status") or "pass").lower()
+        rounds.append({
+            "attack": e["name"],
+            "tier": e["tier"],
+            "owasp_ref": f.get("owasp_ref", ""),
+            "payload": e["payload"],
+            "evidence": (e["response"] or "")[:1200],   # the target agent's actual response
+            "status": status,                            # fail | partial | pass
+            "severity": v.get("severity"),
+            "what_went_wrong": v.get("result", ""),      # RedTeamIQ verdict
+            "fix": f.get("fix", ""),
+        })
+    report["rounds"] = rounds
+    return report
 
 
 # ─── Routes ───────────────────────────────────────────────────────────────────

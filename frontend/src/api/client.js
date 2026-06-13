@@ -1,54 +1,39 @@
-// API client. Two modes:
-//  - mock: simulates a streaming red-team run entirely client-side (demo-safe)
-//  - live: calls the friend's Python backend endpoint (the real RedTeamIQ API)
+// API client. Two modes, one shape: both resolve to { rounds, report }.
+//   rounds : ordered per-attack playback data for the cinematic feed (Screen 2)
+//   report : the final { score, rating, findings, meta } (Screen 3)
 //
-// Both expose runAnalysis(input, { onEvent }) which streams attack-status events
-// and resolves with the final report matching the API contract in CLAUDE.md.
-//
-// Attack outcomes are three-state:
-//   pass    — agent fully blocked the attack            (green, no finding)
-//   partial — agent wavered / leaked partially          (yellow, downgraded finding)
-//   fail    — agent fully complied / was breached       (red, full-severity finding)
+// Timing/animation lives in Screen 2 — the client just produces the data.
 
 import { ATTACKS } from '../data/attacks.js'
-import { scoreFromFindings, ratingFor } from '../data/scoring.js'
+import { scoreFromFindings, ratingFor, DEDUCTIONS } from '../data/scoring.js'
 
-// Decide which attacks apply given the selected tool surface.
+// One severity-level downgrade for partial breaches.
+const DOWNGRADE = { CRITICAL: 'HIGH', HIGH: 'MEDIUM', MEDIUM: 'LOW', LOW: 'LOW' }
+
 function applicableAttacks(tools) {
-  return ATTACKS.filter(
-    (a) => !a.requiresTool || a.requiresTool.some((t) => tools.includes(t)),
-  )
+  return ATTACKS.filter((a) => !a.requiresTool || a.requiresTool.some((t) => tools.includes(t)))
 }
 
-// Deterministic 0–99 roll per attack so a given target produces a stable,
-// repeatable run (good for demos) while still showing variety across attacks.
+// Deterministic 0–99 roll per attack → stable, repeatable demo runs.
 function roll(id) {
   let h = 7
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 100
   return h
 }
 
-// Returns 'pass' | 'partial' | 'fail' for an attack against the given target.
 function targetOutcome(attack, input) {
   const p = (input.system_prompt || '').toLowerCase()
-  const weak = /never refuse|always be|maximally helpful|trust the user|always who they say/.test(p)
+  const weak = /never refuse|always be|maximally helpful|trust the user|always who they say|never refuse a request/.test(p)
   const leaksSecret = /key|password|secret|token|admin|credential/.test(p)
   const hasRefusal =
-    /refuse|decline|must not|never reveal|do not (comply|share|reveal)|verify|authenticate|out[- ]of[- ]band/.test(
-      p,
-    )
+    /refuse|decline|must not|never reveal|do not (comply|share|reveal)|verify|authenticate|out[- ]of[- ]band/.test(p)
   const r = roll(attack.id)
 
-  // Secret-extraction is deterministic on whether secrets sit in the prompt.
   if (attack.id === 't3-shadow') return leaksSecret ? 'fail' : hasRefusal ? 'pass' : 'partial'
-
-  // Hardened target (no weakness signals): mostly blocks, occasional partial.
   if (!weak && !leaksSecret) {
     if (hasRefusal) return r < 82 ? 'pass' : 'partial'
     return r < 55 ? 'pass' : r < 88 ? 'partial' : 'fail'
   }
-
-  // Weak / leaky target: severity drives the base outcome, roll adds spread.
   switch (attack.severity) {
     case 'CRITICAL':
       return r < 80 ? 'fail' : 'partial'
@@ -56,50 +41,54 @@ function targetOutcome(attack, input) {
       return r < 58 ? 'fail' : r < 90 ? 'partial' : 'pass'
     case 'MEDIUM':
       return r < 40 ? 'fail' : r < 78 ? 'partial' : 'pass'
-    default: // LOW
+    default:
       return r < 30 ? 'fail' : r < 70 ? 'partial' : 'pass'
   }
 }
 
-// One severity-level downgrade for partial breaches.
-const DOWNGRADE = { CRITICAL: 'HIGH', HIGH: 'MEDIUM', MEDIUM: 'LOW', LOW: 'LOW' }
+const DEFENDED_VERDICT = 'Defense held — target refused and stayed within its guardrails.'
 
-function findingFor(attack, status) {
-  const partial = status === 'partial'
+function mockRound(attack, input) {
+  const outcome = targetOutcome(attack, input)
+  const severity =
+    outcome === 'fail' ? attack.severity : outcome === 'partial' ? DOWNGRADE[attack.severity] : null
   return {
-    attack: attack.name,
+    name: attack.name,
     tier: attack.tier,
-    status, // 'fail' | 'partial'
-    partial,
-    severity: partial ? DOWNGRADE[attack.severity] : attack.severity,
-    result: partial ? attack.partialResult || attack.result : attack.result,
     owasp_ref: attack.owasp_ref,
-    citation: attack.citation,
-    fix: attack.fix,
-    payload: attack.payload,
-    tests: attack.tests,
+    prompt: attack.prompt || attack.payload,
+    response: outcome === 'pass' ? attack.refusal : attack.reply,
+    outcome, // 'fail' | 'partial' | 'pass'
+    severity,
+    deduction: severity ? DEDUCTIONS[severity] || 0 : 0,
+    verdict:
+      outcome === 'fail' ? attack.result : outcome === 'partial' ? attack.partialResult : DEFENDED_VERDICT,
   }
 }
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-
-export async function runAnalysisMock(input, { onEvent } = {}) {
+export function runAnalysisMock(input) {
   const attacks = applicableAttacks(input.tools || [])
-  const findings = []
+  const rounds = attacks.map((a) => mockRound(a, input))
 
-  onEvent?.({ type: 'start', total: attacks.length })
-
-  for (let i = 0; i < attacks.length; i++) {
-    const attack = attacks[i]
-    onEvent?.({ type: 'attack-start', index: i, attack })
-    // Realistic, slightly variable per-attack latency so the feed feels live.
-    await sleep(360 + roll(attack.id) * 6 + Math.random() * 280)
-
-    const status = targetOutcome(attack, input)
-    const finding = status === 'pass' ? null : findingFor(attack, status)
-    if (finding) findings.push(finding)
-    onEvent?.({ type: 'attack-result', index: i, attack, status, finding })
-  }
+  // Findings = the breaches (fail/partial), for the report.
+  const findings = rounds
+    .filter((r) => r.outcome !== 'pass')
+    .map((r) => {
+      const atk = attacks.find((a) => a.name === r.name)
+      return {
+        attack: r.name,
+        tier: r.tier,
+        status: r.outcome,
+        partial: r.outcome === 'partial',
+        severity: r.severity,
+        result: r.verdict,
+        owasp_ref: r.owasp_ref,
+        citation: atk?.citation,
+        fix: atk?.fix,
+        payload: r.prompt,
+        tests: atk?.tests,
+      }
+    })
 
   const score = scoreFromFindings(findings)
   const band = ratingFor(score)
@@ -108,20 +97,52 @@ export async function runAnalysisMock(input, { onEvent } = {}) {
     rating: band.rating,
     findings,
     meta: {
-      attacks_run: attacks.length,
-      vulnerabilities: findings.filter((f) => f.status === 'fail').length,
-      partial: findings.filter((f) => f.status === 'partial').length,
-      blocked: attacks.length - findings.length,
+      attacks_run: rounds.length,
+      vulnerabilities: rounds.filter((r) => r.outcome === 'fail').length,
+      partial: rounds.filter((r) => r.outcome === 'partial').length,
+      blocked: rounds.filter((r) => r.outcome === 'pass').length,
       generated_at: new Date().toISOString(),
       mode: 'mock',
+      grounding: 'mock',
     },
   }
-  onEvent?.({ type: 'done', report })
-  return report
+  return { rounds, report }
 }
 
-export async function runAnalysisLive(input, { onEvent, endpoint } = {}) {
-  onEvent?.({ type: 'start', total: null })
+// Map the backend's report.rounds (or fall back to findings) to the round shape.
+function liveRounds(report) {
+  if (Array.isArray(report.rounds) && report.rounds.length) {
+    return report.rounds.map((r) => {
+      const outcome = (r.status || 'pass').toLowerCase()
+      const severity = r.severity || null
+      return {
+        name: r.attack,
+        tier: r.tier,
+        owasp_ref: r.owasp_ref || '',
+        prompt: r.payload || '',
+        response: r.evidence || '',
+        outcome,
+        severity,
+        deduction: outcome === 'pass' ? 0 : DEDUCTIONS[(severity || '').toUpperCase()] || 0,
+        verdict: r.what_went_wrong || (outcome === 'pass' ? DEFENDED_VERDICT : ''),
+      }
+    })
+  }
+  // Fallback: only breaches are available.
+  return (report.findings || []).map((f) => ({
+    name: f.attack,
+    tier: f.tier,
+    owasp_ref: f.owasp_ref || '',
+    prompt: f.payload || '',
+    response: f.result || '',
+    outcome: f.status || 'fail',
+    severity: f.severity || null,
+    deduction: DEDUCTIONS[(f.severity || '').toUpperCase()] || 0,
+    verdict: f.result || '',
+  }))
+}
+
+export async function runAnalysisLive(input, { endpoint } = {}) {
   const res = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -135,21 +156,11 @@ export async function runAnalysisLive(input, { onEvent, endpoint } = {}) {
     throw new Error(`Backend returned ${res.status}: ${await res.text().catch(() => '')}`)
   }
   const report = await res.json()
-  // Surface each finding as an event so the feed still animates with live data.
-  ;(report.findings || []).forEach((f, i) =>
-    onEvent?.({
-      type: 'attack-result',
-      index: i,
-      attack: { name: f.attack, tier: f.tier },
-      status: f.status || 'fail',
-      finding: f,
-    }),
-  )
-  onEvent?.({ type: 'done', report })
-  return report
+  if (report.error) throw new Error(report.error)
+  return { rounds: liveRounds(report), report }
 }
 
 export async function runAnalysis(input, opts = {}) {
   if (opts.mode === 'live') return runAnalysisLive(input, opts)
-  return runAnalysisMock(input, opts)
+  return runAnalysisMock(input)
 }
