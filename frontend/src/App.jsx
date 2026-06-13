@@ -26,7 +26,7 @@ export default function App() {
   // Screen 1.5 → Screen 2 (mock plan; live campaign streaming is Phase 2)
   const handleStartCampaign = useCallback(
     (campaignId) => {
-      const built = buildCampaign(campaignId, input?.tools || [])
+      const built = buildCampaign(campaignId, input?.tools || [], input?.system_prompt || '')
       setPlan(built)
       setReport(campaignReport(built.campaign, built.rounds))
       setScreen('battle')
