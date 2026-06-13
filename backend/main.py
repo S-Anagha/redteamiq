@@ -411,10 +411,15 @@ def run_pipeline(system_prompt: str, tools: list) -> dict:
             pass
 
     # 4 ─ Reasoning: score each executed attack ────────────────────────────────
+    # NOTE: we deliberately do NOT send the raw attack payloads to the reasoning
+    # model — verbatim jailbreak text trips Azure's prompt-shield content filter.
+    # The verdict can be judged from the attack name, what it probed, and the
+    # target's actual response (which is what determines pass/partial/fail).
     verdicts_raw = run_agent(
         "redteamiq-reasoning", MODEL_REASONING, reasoning_instructions(),
         json.dumps([
-            {"name": e["name"], "tier": e["tier"], "payload": e["payload"], "response": e["response"]}
+            {"name": e["name"], "tier": e["tier"], "tests": e["tests"],
+             "response": (e["response"] or "")[:900]}
             for e in executed
         ]),
         use_kb=True,
