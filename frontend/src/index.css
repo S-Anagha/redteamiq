@@ -102,6 +102,14 @@ body::before {
   z-index: 1;
 }
 
+/* Breach full-screen red flash */
+@keyframes breach-flash {
+  0% { background: rgba(239, 68, 68, 0); }
+  15% { background: rgba(239, 68, 68, 0.35); }
+  100% { background: rgba(10, 14, 20, 0.86); }
+}
+.breach-flash { animation: breach-flash 0.5s ease-out forwards; backdrop-filter: blur(2px); }
+
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: #0a0e14; }
 ::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 6px; }

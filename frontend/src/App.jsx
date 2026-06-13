@@ -1,48 +1,47 @@
 import { useState, useCallback } from 'react'
 import { Logo } from './components/ui.jsx'
 import InputScreen from './components/InputScreen.jsx'
-import AttackFeedScreen from './components/AttackFeedScreen.jsx'
+import CampaignSelect from './components/CampaignSelect.jsx'
+import Battleground from './components/Battleground.jsx'
 import ReportScreen from './components/ReportScreen.jsx'
-import { runAnalysis } from './api/client.js'
+import { buildCampaign, campaignReport } from './data/campaigns.js'
 
-const STEPS = ['Configure', 'Battle', 'Report']
+const STEPS = ['Configure', 'Choose Attack', 'Battle', 'Report']
 
 export default function App() {
-  const [screen, setScreen] = useState('input') // input | feed | report
+  const [screen, setScreen] = useState('input') // input | campaign | battle | report
   const [mode, setMode] = useState('mock')
   const [endpoint, setEndpoint] = useState('')
 
   const [input, setInput] = useState(null)
-  const [rounds, setRounds] = useState(null) // null = still loading (live API in flight)
+  const [plan, setPlan] = useState(null) // { campaign, rounds }
   const [report, setReport] = useState(null)
-  const [error, setError] = useState(null)
 
-  const handleRun = useCallback(
-    async (cfg) => {
-      setInput(cfg)
-      setRounds(null)
-      setReport(null)
-      setError(null)
-      setScreen('feed')
-      try {
-        const { rounds: r, report: rep } = await runAnalysis(cfg, { mode, endpoint })
-        setReport(rep)
-        setRounds(r)
-      } catch (e) {
-        setError(e.message || 'Run failed')
-      }
+  // Screen 1 → Screen 1.5
+  const handleRun = useCallback((cfg) => {
+    setInput(cfg)
+    setScreen('campaign')
+  }, [])
+
+  // Screen 1.5 → Screen 2 (mock plan; live campaign streaming is Phase 2)
+  const handleStartCampaign = useCallback(
+    (campaignId) => {
+      const built = buildCampaign(campaignId, input?.tools || [])
+      setPlan(built)
+      setReport(campaignReport(built.campaign, built.rounds))
+      setScreen('battle')
     },
-    [mode, endpoint],
+    [input],
   )
 
   const reset = () => {
     setScreen('input')
-    setRounds(null)
+    setPlan(null)
     setReport(null)
-    setError(null)
   }
 
-  const stepIndex = screen === 'input' ? 0 : screen === 'feed' ? 1 : 2
+  const stepIndex =
+    screen === 'input' ? 0 : screen === 'campaign' ? 1 : screen === 'battle' ? 2 : 3
 
   return (
     <div className="relative z-10 min-h-full">
@@ -70,15 +69,6 @@ export default function App() {
         </div>
       </header>
 
-      {error && (
-        <div className="mx-auto mt-4 max-w-3xl rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          <strong>Run failed:</strong> {error}{' '}
-          <button onClick={reset} className="ml-2 underline">
-            back to start
-          </button>
-        </div>
-      )}
-
       {screen === 'input' && (
         <InputScreen
           onRun={handleRun}
@@ -88,13 +78,11 @@ export default function App() {
           setEndpoint={setEndpoint}
         />
       )}
-      {screen === 'feed' && (
-        <AttackFeedScreen
-          rounds={rounds}
-          report={report}
-          mode={mode}
-          onComplete={() => setScreen('report')}
-        />
+      {screen === 'campaign' && (
+        <CampaignSelect tools={input?.tools || []} onStart={handleStartCampaign} />
+      )}
+      {screen === 'battle' && plan && (
+        <Battleground plan={plan} onComplete={() => setScreen('report')} />
       )}
       {screen === 'report' && report && (
         <ReportScreen report={report} input={input} onReset={reset} />
