@@ -51,13 +51,13 @@ source ./setup.env && python ./03_create_connection.py
 Put these in `backend/.env` (copy from `backend/.env.example`):
 
 ```
-PROJECT_ENDPOINT=https://redteamiq-hub.services.ai.azure.com/api/projects/redteamiq-project
-MODEL_EXECUTION=gpt-4.1-mini
-MODEL_REASONING=gpt-4.1-mini 2
-SEARCH_ENDPOINT=https://redteamiq-search.search.windows.net
-KNOWLEDGE_BASE_NAME=redteamiq-kb
-PROJECT_CONNECTION_NAME=redteamiq-kb-mcp
-PROJECT_RESOURCE_ID=/subscriptions/.../projects/redteamiq-project
+PROJECT_ENDPOINT=<http://your-project-endpoint>
+MODEL_EXECUTION=<model-name>
+MODEL_REASONING=<model-name>
+SEARCH_ENDPOINT=<http://your-search-endpoint>
+KNOWLEDGE_BASE_NAME=<your-knowledge-base-name>
+PROJECT_CONNECTION_NAME=<your-mcp-name>
+PROJECT_RESOURCE_ID=<your-resource-ID>
 ```
 
 When `SEARCH_ENDPOINT` + `KNOWLEDGE_BASE_NAME` + `PROJECT_CONNECTION_NAME` are all
@@ -80,6 +80,6 @@ curl localhost:5001/health      # → "foundry_iq": { "enabled": true, ... }
 
 ## Teardown
 Knowledge base + source aren't deleted with the agent/connection — remove them
-explicitly: `DELETE {SEARCH_ENDPOINT}/knowledgebases/redteamiq-kb` and
+explicitly: `DELETE {SEARCH_ENDPOINT}/knowledgebases/{knowledgebase-name}` and
 `/knowledgesources/redteamiq-blob-ks` (api-version 2026-05-01-preview), then delete
 the storage account and search service if no longer needed.
