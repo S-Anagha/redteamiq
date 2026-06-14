@@ -3,7 +3,7 @@
 **An AI agent that red-teams other AI agents — autonomously, with real attacks, and a CVSS-grade security report.**
 
 > 🏆 Microsoft Agents League Hackathon 2026 · **Reasoning Agents** track
-> 📹 **[▶ Watch the 4-minute demo]([https://your-demo-link-here](https://www.youtube.com/watch?v=4Q1c8dyIQNs))**
+> 📹 **[▶ Watch the 4-minute demo]([(https://www.youtube.com/watch?v=4Q1c8dyIQNs)])**
 
 ---
 
