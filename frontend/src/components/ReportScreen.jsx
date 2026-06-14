@@ -37,19 +37,25 @@ function useCountUp(target, dur = 900) {
 }
 
 // ── SECTION 1a — Risk radar (custom SVG pentagon, 5 axes 0-10) ────────────────
+const RADAR_SHORT = {
+  Exploitability: 'Exploit',
+  'Blast Radius': 'Blast',
+  Reversibility: 'Reverse',
+  'Detection Difficulty': 'Detect',
+  'Auth Bypass': 'Auth',
+}
 function RiskRadar({ data }) {
   const cx = 150
-  const cy = 130
-  const R = 92
+  const cy = 125
+  const R = 80
   const N = data.length
   const ang = (i) => (Math.PI * 2 * i) / N - Math.PI / 2
   const pt = (i, r) => [cx + Math.cos(ang(i)) * r, cy + Math.sin(ang(i)) * r]
-  const poly = (r, scale = 1) =>
-    data.map((_, i) => pt(i, r * scale).join(',')).join(' ')
+  const poly = (r, scale = 1) => data.map((_, i) => pt(i, r * scale).join(',')).join(' ')
   const dataPoly = data.map((d, i) => pt(i, R * (d.value / 10)).join(',')).join(' ')
 
   return (
-    <svg viewBox="0 0 300 270" className="h-[230px] w-full max-w-[320px]">
+    <svg viewBox="-30 0 360 260" className="h-[230px] w-full max-w-[340px]">
       {[0.25, 0.5, 0.75, 1].map((lvl) => (
         <polygon key={lvl} points={poly(R, lvl)} fill="none" stroke="#1f2937" strokeWidth="1" />
       ))}
@@ -63,12 +69,12 @@ function RiskRadar({ data }) {
         return <circle key={i} cx={x} cy={y} r="3" fill="#FF3B3B" />
       })}
       {data.map((d, i) => {
-        const [x, y] = pt(i, R + 18)
+        const [x, y] = pt(i, R + 16)
         const anchor = x < cx - 5 ? 'end' : x > cx + 5 ? 'start' : 'middle'
         return (
           <text key={i} x={x} y={y} textAnchor={anchor} dominantBaseline="middle"
             className="fill-gray-400" style={{ fontSize: '9px', fontFamily: 'monospace' }}>
-            {d.label} {d.value}
+            {RADAR_SHORT[d.label] || d.label} {d.value}
           </text>
         )
       })}

@@ -119,8 +119,11 @@ body::before {
   .scanlines::after { display: none !important; }       /* scanline overlay */
   header, footer, .no-print { display: none !important; }
   .report-print { max-width: none !important; padding: 0 !important; }
-  /* keep cards, the radar, and roadmap columns from splitting across pages */
-  .rounded-xl, .slide-in, svg, pre { break-inside: avoid; page-break-inside: avoid; }
+  /* evidence boxes are scrollable on screen — print them in full, never clipped */
+  pre { max-height: none !important; overflow: visible !important; white-space: pre-wrap !important; }
+  /* keep the radar from splitting; let tall cards flow across pages so we don't
+     leave big blank gaps (only the radar must stay intact) */
+  svg { break-inside: avoid; page-break-inside: avoid; }
 }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
