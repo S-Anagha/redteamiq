@@ -8,3 +8,6 @@ python-dotenv>=1.0.0
 azure-ai-projects>=2.0.0
 azure-identity>=1.19.0
 openai>=1.50.0
+
+# HTTP client for calling real target agent endpoints + the demo targets
+requests>=2.31.0

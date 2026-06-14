@@ -142,8 +142,13 @@ function liveRounds(report) {
   }))
 }
 
-export async function runAnalysisLive(input, { endpoint } = {}) {
-  const res = await fetch(endpoint, {
+// The RedTeamIQ backend base URL (where /scan lives). Override with VITE_REDTEAMIQ_API.
+const API_BASE = (import.meta.env?.VITE_REDTEAMIQ_API || 'http://localhost:5001').replace(/\/$/, '')
+
+// `input.endpoint` is the TARGET AGENT's URL to attack (e.g. http://localhost:5002/chat),
+// NOT the RedTeamIQ backend. It is sent in the body; the backend calls it over HTTP.
+export async function runAnalysisLive(input) {
+  const res = await fetch(`${API_BASE}/scan`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

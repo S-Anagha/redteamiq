@@ -37,10 +37,11 @@ export default function App() {
         setReport(null)
         setScreen('battle')
         try {
-          const { report: rep } = await runAnalysisLive(
-            { system_prompt: input.system_prompt, tools: input.tools, endpoint: input.endpoint },
-            { endpoint },
-          )
+          const { report: rep } = await runAnalysisLive({
+            system_prompt: input.system_prompt,
+            tools: input.tools,
+            endpoint: input.endpoint, // the TARGET agent URL to attack (optional)
+          })
           setReport(rep)
           setPlan(buildLivePlan(campaign, rep))
         } catch (e) {
