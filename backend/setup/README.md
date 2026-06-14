@@ -48,7 +48,7 @@ source ./setup.env && python ./03_create_connection.py
 ```
 
 ## Then wire the backend
-Put these in `backend/.env` (copy from `backend/.env.example`):
+Put these in `backend/.env` :
 
 ```
 PROJECT_ENDPOINT=<http://your-project-endpoint>
