@@ -110,6 +110,19 @@ body::before {
 }
 .breach-flash { animation: breach-flash 0.5s ease-out forwards; backdrop-filter: blur(2px); }
 
+/* ── Print → Save as PDF: print the rendered report exactly, hide app chrome ── */
+@media print {
+  @page { margin: 12mm; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  html, body, #root { height: auto !important; background: #0a0e14 !important; }
+  body::before { display: none !important; }            /* grid overlay */
+  .scanlines::after { display: none !important; }       /* scanline overlay */
+  header, footer, .no-print { display: none !important; }
+  .report-print { max-width: none !important; padding: 0 !important; }
+  /* keep cards, the radar, and roadmap columns from splitting across pages */
+  .rounded-xl, .slide-in, svg, pre { break-inside: avoid; page-break-inside: avoid; }
+}
+
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: #0a0e14; }
 ::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 6px; }

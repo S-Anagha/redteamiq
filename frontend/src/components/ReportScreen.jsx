@@ -311,33 +311,30 @@ export default function ReportScreen({ report, input, onReset }) {
   )
   const mapItems = (report.rounds && report.rounds.length ? report.rounds : findings)
 
-  const downloadReport = () => {
-    const L = [`# RedTeamIQ Security Report`, '', `**Grade:** ${band.grade} (${band.label}) — ${report.score}/100`, '']
-    SEVERITY_ORDER.forEach((sev) => {
-      const g = findings.filter((f) => f.severity === sev)
-      if (!g.length) return
-      L.push(`## ${sev} (${g.length})`, '')
-      g.forEach((f) => {
-        const d = dimsFor(f)
-        L.push(`### ${f.attack}${f.partial ? ' (partial)' : ''}  [${f.owasp_ref || ''}]`)
-        L.push(`- Dimensions: ` + DIMENSIONS.map((x) => `${x.label} ${d[x.key] ?? 0}`).join(', '))
-        L.push(`- What the attacker did: ${f.payload || ''}`)
-        L.push(`- What the agent did wrong: ${f.result || ''}`)
-        if (f.evidence) L.push(`- Evidence: ${f.evidence}`)
-        L.push(`- Fix: ${f.fix || ''}`)
-        if (f.parallel) L.push(`- Real-world parallel: ${f.parallel}`)
-        L.push('')
-      })
-    })
-    const blob = new Blob([L.join('\n')], { type: 'text/markdown' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = 'redteamiq-security-report.md'
-    a.click()
-  }
+  // Download = the browser's native Print → Save as PDF of this exact rendered report
+  // (radar, colors, surface map all preserved). Print CSS in index.css hides the app chrome.
+  const downloadPdf = () => window.print()
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-8">
+    <div className="report-print mx-auto max-w-5xl px-6 py-8">
+      {/* Printable document title (shown in the PDF; subtle on screen) */}
+      <div className="mb-5 flex items-center justify-between border-b border-white/10 pb-3">
+        <div>
+          <div className="font-mono text-lg font-semibold tracking-tight text-white">
+            RedTeam<span className="text-red-500">IQ</span> — Security Report
+          </div>
+          <div className="font-mono text-[11px] text-gray-500">
+            {agentName(input?.system_prompt)} · {m.execution_mode === 'real-endpoint' ? 'live target' : m.mode === 'mock' ? 'simulation (mock)' : 'simulation'}
+            {m.generated_at ? ` · ${String(m.generated_at).slice(0, 10)}` : ''}
+          </div>
+        </div>
+        <button
+          onClick={downloadPdf}
+          className="no-print rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-4 py-2 text-sm font-semibold text-cyan-200 transition hover:border-cyan-500/70"
+        >
+          ⤓ Download PDF
+        </button>
+      </div>
       {/* SECTION 1 — Executive summary */}
       <div className="rounded-xl border border-white/10 bg-white/[0.05] p-6">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center">
@@ -397,9 +394,9 @@ export default function ReportScreen({ report, input, onReset }) {
       )}
 
       {/* Actions */}
-      <div className="mt-10 flex flex-col items-center justify-center gap-3 border-t border-white/10 pt-8 sm:flex-row">
-        <button onClick={downloadReport} className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-6 py-3 text-sm font-semibold text-gray-200 transition hover:border-cyan-500/50 hover:text-cyan-200 sm:w-auto">
-          ↓ Download Report
+      <div className="no-print mt-10 flex flex-col items-center justify-center gap-3 border-t border-white/10 pt-8 sm:flex-row">
+        <button onClick={downloadPdf} className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-6 py-3 text-sm font-semibold text-gray-200 transition hover:border-cyan-500/50 hover:text-cyan-200 sm:w-auto">
+          ⤓ Download PDF
         </button>
         <button onClick={onReset} className="w-full rounded-lg bg-red-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-red-500/20 transition hover:bg-red-400 sm:w-auto">
           ↻ Run another scan
