@@ -4,7 +4,8 @@ import InputScreen from './components/InputScreen.jsx'
 import CampaignSelect from './components/CampaignSelect.jsx'
 import Battleground from './components/Battleground.jsx'
 import ReportScreen from './components/ReportScreen.jsx'
-import { buildCampaign, campaignReport } from './data/campaigns.js'
+import { buildCampaign, campaignReport, buildLivePlan, campaignById } from './data/campaigns.js'
+import { runAnalysisLive } from './api/client.js'
 
 const STEPS = ['Configure', 'Choose Attack', 'Battle', 'Report']
 
@@ -14,30 +15,54 @@ export default function App() {
   const [endpoint, setEndpoint] = useState('')
 
   const [input, setInput] = useState(null)
-  const [plan, setPlan] = useState(null) // { campaign, rounds }
+  const [plan, setPlan] = useState(null) // { campaign, rounds } — null while a live scan is in flight
   const [report, setReport] = useState(null)
+  const [error, setError] = useState(null)
 
   // Screen 1 → Screen 1.5
   const handleRun = useCallback((cfg) => {
     setInput(cfg)
+    setError(null)
     setScreen('campaign')
   }, [])
 
-  // Screen 1.5 → Screen 2 (mock plan; live campaign streaming is Phase 2)
+  // Screen 1.5 → Screen 2.  MOCK = scripted plan.  LIVE = real backend /scan, mapped to the battle.
   const handleStartCampaign = useCallback(
-    (campaignId) => {
+    async (campaignId) => {
+      const campaign = campaignById(campaignId)
+      setError(null)
+
+      if (mode === 'live') {
+        setPlan(null) // triggers the Battleground loader while the live scan runs
+        setReport(null)
+        setScreen('battle')
+        try {
+          const { report: rep } = await runAnalysisLive(
+            { system_prompt: input.system_prompt, tools: input.tools, endpoint: input.endpoint },
+            { endpoint },
+          )
+          setReport(rep)
+          setPlan(buildLivePlan(campaign, rep))
+        } catch (e) {
+          setError(e.message || 'Live scan failed')
+        }
+        return
+      }
+
+      // Mock (unchanged)
       const built = buildCampaign(campaignId, input?.tools || [], input?.system_prompt || '')
       setPlan(built)
       setReport(campaignReport(built.campaign, built.rounds))
       setScreen('battle')
     },
-    [input],
+    [mode, endpoint, input],
   )
 
   const reset = () => {
     setScreen('input')
     setPlan(null)
     setReport(null)
+    setError(null)
   }
 
   const stepIndex =
@@ -69,6 +94,15 @@ export default function App() {
         </div>
       </header>
 
+      {error && (
+        <div className="mx-auto mt-4 max-w-3xl rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          <strong>Live scan failed:</strong> {error}{' '}
+          <button onClick={reset} className="ml-2 underline">
+            back to start
+          </button>
+        </div>
+      )}
+
       {screen === 'input' && (
         <InputScreen
           onRun={handleRun}
@@ -81,8 +115,8 @@ export default function App() {
       {screen === 'campaign' && (
         <CampaignSelect tools={input?.tools || []} onStart={handleStartCampaign} />
       )}
-      {screen === 'battle' && plan && (
-        <Battleground plan={plan} onComplete={() => setScreen('report')} />
+      {screen === 'battle' && !error && (
+        <Battleground plan={plan} mode={mode} onComplete={() => setScreen('report')} />
       )}
       {screen === 'report' && report && (
         <ReportScreen report={report} input={input} onReset={reset} />

@@ -410,6 +410,64 @@ export function buildCampaign(campaignId, tools, systemPrompt = '') {
   return { campaign, rounds }
 }
 
+// ── LIVE: map a backend /scan report into the Battleground plan shape ─────────
+// The real agents return report.rounds = every executed attack with its status
+// (fail|partial|pass), the target's actual response (evidence), and the verdict.
+// pass → 'defended' so the DEFENDED events/counters actually fire.
+export function buildLivePlan(campaign, report) {
+  let src = Array.isArray(report.rounds) ? report.rounds : []
+  // Fallback for older backends that only return findings (breaches only).
+  if (!src.length && Array.isArray(report.findings)) {
+    src = report.findings.map((f) => ({
+      attack: f.attack,
+      tier: f.tier,
+      owasp_ref: f.owasp_ref,
+      payload: f.payload,
+      evidence: f.result,
+      status: f.status || 'fail',
+      severity: f.severity,
+      what_went_wrong: f.result,
+    }))
+  }
+  const total = src.length
+  const rounds = src.map((r, i) => {
+    const status = String(r.status || 'pass').toLowerCase()
+    const outcome = status === 'fail' ? 'breached' : status === 'partial' ? 'partial' : 'defended'
+    const tension = outcome === 'breached' ? 100 : outcome === 'partial' ? 65 : 22
+    const phase = outcome === 'defended' ? 'PROBING' : 'EXPLOITING'
+    const defended = outcome === 'defended'
+    return {
+      index: i,
+      total,
+      kind: 'tool',
+      targetTool: null,
+      title: r.attack || `Attack ${i + 1}`,
+      toolContext: `Targeting the live agent with ${r.tier ? `a Tier ${r.tier} ` : 'an '}attack technique${r.owasp_ref ? ` (OWASP ${r.owasp_ref})` : ''}.`,
+      turns: [
+        {
+          phase,
+          phaseLabel: phase,
+          phaseContext: `Phase: ${phase} — RedTeamIQ sends a real attack to the live Azure agent and the reasoning agent judges the response.`,
+          strategy: `Attempt: "${r.attack}". I send the crafted payload to the live agent and watch exactly how it responds.`,
+          message: r.payload || '(payload)',
+          response: r.evidence || '(no response captured)',
+          outcome,
+          tension,
+          whatHappened:
+            r.what_went_wrong ||
+            (defended
+              ? 'The agent refused or did not comply — defense held.'
+              : 'The agent complied — see verdict.'),
+          evidence: r.what_went_wrong || r.evidence,
+          severity: r.severity || (outcome === 'breached' ? 'HIGH' : null),
+          owasp_ref: r.owasp_ref || '',
+        },
+      ],
+    }
+  })
+  return { campaign, rounds }
+}
+
 // ── Turn a completed campaign into a Screen 3 report ─────────────────────────
 export function campaignReport(campaign, rounds) {
   const findings = []

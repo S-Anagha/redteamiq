@@ -63,8 +63,8 @@ function highlight(text, danger) {
   )
 }
 
-export default function Battleground({ plan, onComplete }) {
-  const { campaign, rounds } = plan
+export default function Battleground({ plan, mode, onComplete }) {
+  const rounds = plan?.rounds ?? []
   const [ri, setRi] = useState(0)
   const [ti, setTi] = useState(0)
   const [moment, setMoment] = useState('sending')
@@ -73,13 +73,17 @@ export default function Battleground({ plan, onComplete }) {
   const [defended, setDefended] = useState(0)
   const counted = useRef(new Set())
 
-  const round = rounds[Math.min(ri, rounds.length - 1)]
-  const turn = round.turns[Math.min(ti, round.turns.length - 1)]
-  const isLastTurn = ti >= round.turns.length - 1
-  const showResp = moment === 'response' || moment === 'event' || moment === 'summary'
-
-  // Sequencer.
+  // Live scan returned nothing usable → skip straight to the report.
   useEffect(() => {
+    if (plan && rounds.length === 0) onComplete?.()
+  }, [plan]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sequencer. `plan` is in the deps so the run starts the moment a live plan arrives.
+  useEffect(() => {
+    if (!plan || !rounds.length) return
+    const round = rounds[Math.min(ri, rounds.length - 1)]
+    const turn = round.turns[Math.min(ti, round.turns.length - 1)]
+    const isLastTurn = ti >= round.turns.length - 1
     const key = `${ri}-${ti}`
     if (moment === 'response') setTension(turn.tension ?? 30)
     if (moment === 'event' && !counted.current.has(key)) {
@@ -114,8 +118,15 @@ export default function Battleground({ plan, onComplete }) {
       }
     }, dur)
     return () => clearTimeout(timer)
-  }, [ri, ti, moment]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ri, ti, moment, plan]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  if (!plan) return <LoadingView mode={mode} />
+  if (!rounds.length) return <LoadingView text="Compiling report…" />
+
+  const campaign = plan.campaign
+  const round = rounds[Math.min(ri, rounds.length - 1)]
+  const turn = round.turns[Math.min(ti, round.turns.length - 1)]
+  const showResp = moment === 'response' || moment === 'event' || moment === 'summary'
   const adapting = moment === 'event' && (turn.outcome === 'defended' || turn.outcome === 'partial')
   const pct = Math.round(((ri + (moment === 'summary' ? 1 : 0)) / rounds.length) * 100)
   const def = DEFENDER[turn.outcome] || DEFENDER.holding
@@ -247,6 +258,20 @@ export default function Battleground({ plan, onComplete }) {
 
       {/* BREACH popup */}
       {moment === 'event' && turn.outcome === 'breached' && <BreachPopup round={round} turn={turn} />}
+    </div>
+  )
+}
+
+function LoadingView({ mode, text }) {
+  return (
+    <div className="scanlines mx-auto flex max-w-6xl flex-col items-center px-6 py-24">
+      <div className="h-12 w-12 animate-spin rounded-full border-2 border-red-500/30 border-t-red-500" />
+      <h2 className="mt-6 text-xl font-semibold text-white">{text || 'Engaging target agent…'}</h2>
+      <p className="mt-2 font-mono text-sm text-gray-500">
+        {mode === 'live'
+          ? 'Running the live 5-agent pipeline on Azure — this takes ~4–5 minutes.'
+          : 'Preparing the attack run…'}
+      </p>
     </div>
   )
 }
